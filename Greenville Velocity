@@ -1,0 +1,157 @@
+local SpectrumUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Documantation12/Universal-Vehicle-Script/main/Library.lua"))()
+local Spectrum = SpectrumUI.new("Spectrum | Velocity Control")
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local InputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+-- Black & Red Theme
+local Colors = {
+    Background = Color3.fromRGB(10, 10, 10),
+    Glow = Color3.fromRGB(0, 0, 0),
+    Accent = Color3.fromRGB(120, 0, 0),
+    LightContrast = Color3.fromRGB(25, 0, 0),
+    DarkContrast = Color3.fromRGB(15, 0, 0),
+    TextColor = Color3.fromRGB(255, 60, 60)
+}
+
+for name, color in pairs(Colors) do
+    pcall(Spectrum.setTheme, Spectrum, name, color)
+end
+
+local function FindVehicle(desc)
+    return
+        desc:FindFirstAncestor(LocalPlayer.Name .. "'s Car")
+        or (desc:FindFirstAncestor("Body") and desc:FindFirstAncestor("Body").Parent)
+        or (desc:FindFirstAncestor("Misc") and desc:FindFirstAncestor("Misc").Parent)
+        or desc:FindFirstAncestorWhichIsA("Model")
+end
+
+local function MoveVehicle(cf: CFrame)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local seat = char:FindFirstChildWhichIsA("Humanoid") and char:FindFirstChildWhichIsA("Humanoid").SeatPart
+    local vehicle = seat and FindVehicle(seat)
+    if not vehicle then return end
+    char.Parent = vehicle
+    local success = pcall(function() vehicle:SetPrimaryPartCFrame(cf) end)
+    if not success then vehicle:MoveTo(cf.Position) end
+end
+
+-- VEHICLE PAGE
+local vehiclePage = Spectrum:addPage("Vehicle", 8356815386)
+
+local general = vehiclePage:addSection("Controls")
+local controlsActive = true
+general:addToggle("Enable Keybinds", controlsActive, function(v) controlsActive = v end)
+
+-- Flight Mode
+local flight = vehiclePage:addSection("Flight Mode")
+local flightOn = false
+local flySpeed = 1
+flight:addToggle("Activate Flight", false, function(v) flightOn = v end)
+flight:addSlider("Flight Speed", 100, 0, 800, function(v) flySpeed = v / 100 end)
+
+local defaultParent
+RunService.Stepped:Connect(function()
+    local char = LocalPlayer.Character
+    if flightOn and char then
+        local humanoid = char:FindFirstChildWhichIsA("Humanoid")
+        local seat = humanoid and humanoid.SeatPart
+        if seat and seat:IsA("VehicleSeat") then
+            local veh = FindVehicle(seat)
+            if veh then
+                char.Parent = veh
+                if not veh.PrimaryPart then
+                    veh.PrimaryPart = seat.Parent == veh and seat or veh:FindFirstChildWhichIsA("BasePart")
+                end
+                local cf = veh:GetPrimaryPartCFrame()
+                local look = workspace.CurrentCamera.CFrame.LookVector
+                local move = CFrame.new(
+                    (InputService:IsKeyDown(Enum.KeyCode.D) and flySpeed) or (InputService:IsKeyDown(Enum.KeyCode.A) and -flySpeed) or 0,
+                    (InputService:IsKeyDown(Enum.KeyCode.E) and flySpeed / 2) or (InputService:IsKeyDown(Enum.KeyCode.Q) and -flySpeed / 2) or 0,
+                    (InputService:IsKeyDown(Enum.KeyCode.S) and flySpeed) or (InputService:IsKeyDown(Enum.KeyCode.W) and -flySpeed) or 0
+                )
+                if not InputService:GetFocusedTextBox() then
+                    veh:SetPrimaryPartCFrame(CFrame.new(cf.Position, cf.Position + look) * move)
+                end
+                seat.AssemblyLinearVelocity = Vector3.zero
+                seat.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
+    else
+        if char then
+            char.Parent = defaultParent or char.Parent
+            defaultParent = char.Parent
+        end
+    end
+end)
+
+-- Acceleration
+local accel = vehiclePage:addSection("Acceleration")
+local accelRate = 0.025
+accel:addSlider("Speed Boost (x0.001)", 25, 0, 50, function(v) accelRate = v / 1000 end)
+
+local forwardKey = Enum.KeyCode.W
+accel:addKeybind("Accelerate", forwardKey, function()
+    if not controlsActive then return end
+    while InputService:IsKeyDown(forwardKey) do
+        task.wait()
+        local char = LocalPlayer.Character
+        local humanoid = char and char:FindFirstChildWhichIsA("Humanoid")
+        local seat = humanoid and humanoid.SeatPart
+        if seat and seat:IsA("VehicleSeat") then
+            seat.AssemblyLinearVelocity *= Vector3.new(1 + accelRate, 1, 1 + accelRate)
+        end
+        if not controlsActive then break end
+    end
+end, function(k) forwardKey = k.KeyCode end)
+
+-- Braking
+local braking = vehiclePage:addSection("Braking")
+local brakeKey = Enum.KeyCode.S
+local brakeForce = 0.15
+braking:addSlider("Brake Strength (x0.001)", brakeForce * 1000, 0, 300, function(v) brakeForce = v / 1000 end)
+
+braking:addKeybind("Hold to Brake", brakeKey, function()
+    if not controlsActive then return end
+    while InputService:IsKeyDown(brakeKey) do
+        task.wait()
+        local char = LocalPlayer.Character
+        local humanoid = char and char:FindFirstChildWhichIsA("Humanoid")
+        local seat = humanoid and humanoid.SeatPart
+        if seat and seat:IsA("VehicleSeat") then
+            seat.AssemblyLinearVelocity *= Vector3.new(1 - brakeForce, 1, 1 - brakeForce)
+        end
+        if not controlsActive then break end
+    end
+end, function(k) brakeKey = k.KeyCode end)
+
+braking:addKeybind("Full Stop", Enum.KeyCode.P, function()
+    if not controlsActive then return end
+    local char = LocalPlayer.Character
+    local humanoid = char and char:FindFirstChildWhichIsA("Humanoid")
+    local seat = humanoid and humanoid.SeatPart
+    if seat and seat:IsA("VehicleSeat") then
+        seat.AssemblyLinearVelocity = Vector3.zero
+        seat.AssemblyAngularVelocity = Vector3.zero
+    end
+end)
+
+-- SETTINGS PAGE
+local settings = Spectrum:addPage("Settings", 8356778308)
+local menu = settings:addSection("UI Control")
+menu:addToggle("CTRL to Toggle UI", true, function(v)
+    if v then
+        InputService.InputBegan:Connect(function(input, processed)
+            if input.KeyCode == Enum.KeyCode.LeftControl and not processed then
+                Spectrum:toggle()
+            end
+        end)
+    end
+end)
+
+local function CloseInterface()
+    Spectrum:toggle()
+end
